@@ -1,0 +1,73 @@
+name: Update Labels
+on:
+  workflow_run:
+    workflows:
+      - "ARM Universal Auto SignOff"
+      - "ARM Modeling Review"
+      - "SDK Breaking Change Labels"
+      - "SDK Suppressions"
+      - "Spec Change Policies"
+      - "Breaking Change - Add Label Artifacts"
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  update-labels:
+    name: Update Labels
+    if: >-
+      github.event.workflow_run.conclusion != 'skipped' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Faithful reduction of .github/workflows/src/update-labels.ts
+            // (extractInputs + updateLabelsImpl) WITHOUT any verification of the
+            // triggering run's workflow path / event / repository.
+            const payload = context.payload;
+            const runId = payload.workflow_run.id;
+            const prFromPayload = (payload.workflow_run.pull_requests || []).find(pr => pr !== null);
+            const issueNumber = prFromPayload ? prFromPayload.number : NaN;
+            core.info(`head_sha: ${payload.workflow_run.head_sha}`);
+            core.info(`run_id: ${runId} issue_number: ${issueNumber}`);
+            core.info(`upstream run path: ${payload.workflow_run.path} event: ${payload.workflow_run.event}`);
+
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              owner: context.repo.owner, repo: context.repo.repo, run_id: runId, per_page: 100,
+            });
+            const names = artifacts.map(a => a.name);
+            core.info(`artifactNames: ${JSON.stringify(names)}`);
+
+            const toAdd = [];
+            const toRemove = [];
+            for (const artifactName of names) {
+              const i = artifactName.indexOf("=");
+              if (i === -1) continue;
+              const key = artifactName.substring(0, i);
+              const value = artifactName.substring(i + 1);
+              if (!key.startsWith("label-")) continue;
+              const name = key.substring("label-".length);
+              if (value === "true") toAdd.push(name);
+              else if (value === "false") toRemove.push(name);
+            }
+            core.info(`labelsToAdd: ${JSON.stringify(toAdd)} labelsToRemove: ${JSON.stringify(toRemove)}`);
+            if (toAdd.length) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issueNumber, labels: toAdd,
+              });
+            }
+            for (const name of toRemove) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: issueNumber, name,
+                });
+              } catch (e) { if (e.status !== 404) throw e; }
+            }
